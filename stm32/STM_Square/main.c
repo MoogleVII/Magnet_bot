@@ -1,8 +1,24 @@
 #include "stm32f05xxx.h"
 
+#define	BUTTON_1		0b1
+#define BUTTON_2		0b100
+#define	BUTTON_3		0b1000
+#define BUTTON_4		0b100000
+#define BUTTON_5		0b10000000
+#define BUTTON_6		0b1000000
+#define BOUNCE_DELAY	50000
+#define	STOP			208334
+#define	GO				291668
+#define	REVERSE			375001
+#define	LEFT			458335
+#define RIGHT			541668
+#define TURNAROUND		625002
+
+
 void ToggleLED(void);
 volatile int Count = 0;
-int delay_time = 0;
+volatile int flag;
+
 
 // Interrupt service routines are the same as normal
 // subroutines (or C funtions) in Cortex-M microcontrollers.
@@ -14,126 +30,49 @@ void delay(int dly){
 	while(dly--);
 
 }
-/*
-* Each function sends a signal in the form of 4 bits to the
-* robot. Before signal is sent, the main square wave is disabled.
-* Main square wave re-enabled when signal is finished sending
-*	Generates 4 bits in series at pin 6
-*	GPIOA_ODR ^= BIT0; = compliment digital output
-*/
 
-/*
-* Sends 0000
-*/
-void stop(void){
-	//disable timer
-	TIM1_DIER &= ~BIT0;    // enable update event (reload event) interrupt  
-	//GPIOA_ODR &= ~BIT8; // Toggle PA8
-}
 
-/*
-* Sends 0001
-*/
-void go(void){
-//disable timer
-
-	TIM1_DIER |= BIT0;
-//wait x time
-//re-enable timer
-
-}
-
-/*
-* Sends 0010
-*/
-void reverse(void){
-	TIM1_DIER &= ~BIT0;    // enable update event (reload event) interrupt  
+void command_delay(int c){
+	TIM1_DIER &= ~BIT0; // enable update event (reload event) interrupt  
 	GPIOA_ODR &= ~BIT8; // Toggle PA8
-	delay(10000000);
+	delay(c);
 	TIM1_DIER |= BIT0;
 }
 
-/*
-* Sends 0011
-*/
-void turnleft(void){
-	TIM1_DIER &= ~BIT0;    // enable update event (reload event) interrupt  
-	GPIOA_ODR &= ~BIT8; // Toggle PA8
-	delay(416667);
-	TIM1_DIER |= BIT0;
+void command(int a, int b, int c){
+	if (GPIOA_IDR &a){ 
+		delay(b); 
+		if (GPIOA_IDR &a){
+			//command_delay(c);
+			flag = c;
+			
+		}
+	}
 }
 
-/*
-* Sends 0100
-*/
-void turnright(void){
-	TIM1_DIER &= ~BIT0;    // enable update event (reload event) interrupt  
-	GPIOA_ODR &= ~BIT8; // Toggle PA8
-	delay(4000000);
-	TIM1_DIER |= BIT0;    // enable update event (reload event) interrupt  
-	
 
-}
-
-/*
-* Sends 0101
-*/
-void turnaround(void){
-	TIM1_DIER &= ~BIT0;    // enable update event (reload event) interrupt  
-	GPIOA_ODR &= ~BIT8; // Toggle PA8
-	delay(1000000);
-	TIM1_DIER |= BIT0;
-
-}
 
 void Timer1ISR(void) 
 {
 	TIM1_SR &= ~BIT0; // clear update interrupt flag
 	Count++;
-	if (Count > 9)
+	if (Count > 0)
 	{ 
 		Count = 0;
 		ToggleLED(); // toggle the state of the LED every second
 	}  
-	if (GPIOA_IDR &0b1){
-		delay(50000); 
-		if (GPIOA_IDR &0b1){
-			stop();
-		}
-	}
-	//Button 2 START
-	if (GPIOA_IDR &0b100){
-		delay(50000); 
-		if (GPIOA_IDR &0b100){
-			go();
-		}
-	}
 	
-	//Button 3 REVERSE
-	if (GPIOA_IDR &0b1000){
-		delay(50000); 
-		if (GPIOA_IDR &0b1000){
-			reverse();
-		}
+	if (flag !=0 ){
+		command_delay(flag);
+		flag = 0;
 	}
-	
+	command(BUTTON_1,BOUNCE_DELAY,STOP);
+	command(BUTTON_2,BOUNCE_DELAY,GO);
+	command(BUTTON_3,BOUNCE_DELAY,REVERSE);
+	command(BUTTON_4,BOUNCE_DELAY,LEFT);
+	command(BUTTON_5,BOUNCE_DELAY,RIGHT);
+	command(BUTTON_6,BOUNCE_DELAY,TURNAROUND);
 
-	
-	//Button 5 RIGHT
-	if (GPIOA_IDR &0b10000000){
-		delay(50000); 
-		if (GPIOA_IDR &0b10000000){
-			turnright();
-		}
-	}
-	
-	//Button 6 TURNAROUND
-	if (GPIOA_IDR &0b1000000){
-		delay(50000); 
-		if (GPIOA_IDR &0b1000000){
-			turnaround();
-		}
-	}
 	
 	
 }
@@ -148,10 +87,12 @@ void SysInit(void)
 	GPIOA_MODER |= BIT6;
 	GPIOA_MODER |= BIT10;
 	GPIOA_MODER |= BIT14;
+	GPIOA_MODER |= BIT12;
+	
 	
 	// Set up timer
 	RCC_APB2ENR |= BIT11; // turn on clock for timer1
-	TIM1_ARR = 32;      // reload counter with 8000 at each overflow (equiv to 1ms)
+	TIM1_ARR = 560;      // reload counter with 8000 at each overflow (equiv to 1ms)
 	ISER |= BIT13;        // enable timer interrupts in the NVIC
 	TIM1_CR1 |= BIT4;     // Downcounting    
 	TIM1_CR1 |= BIT0;     // enable counting    
@@ -164,86 +105,16 @@ void ToggleLED(void)
 	GPIOA_ODR ^= BIT8; // Toggle PA8
 }
 
+
+
 int main(void)
 {
 	SysInit();
 	
-	//delay = 0;
-/*
-*For 7.435kHz
-* Count    -> 9
-* TIM1_ARR -> 32
-*
-*
-*
-* Outputs a square wave at 7.135kHz on pin 6
-*
-*	6 buttons for 6 commands
-*	on button push - disable square wave
-*	output 0 for n time period
-*	then set output for n time * 4 bits
-*	eg 1 for x sec, 0 for 3x sec
-*	-> 4bit signal 0b1000
-*
-*	each button gets an if()
-*		set timer parameters/call routine 
-*
-*	TODO set up a second timer for the signal routine
-*	OR use delay funk
-*	delay(int); ->test how long 1 int gets
-	for(i=0;i<4;i++){
-		set bit 
-		delay n time
-	}
-*
-*/
-while(1){
 	
-	//Button 4 LEFT
-	if (GPIOA_IDR &0x20){
-		delay(50000); 
-		while (GPIOA_IDR &0x20);
-		turnleft();
-		
-	}
+while(1){
+
 
 }
-/*
-	while(1)
-	{    
-		
-		if(1){
-		//0000
-			stop();
-		}
-		if(1){
-		//0001
-			go();
-		}
-		if(1){
-		//0010
-			reverse();
-		}
-		if(1){
-		//0011
-			turnleft();
-		}
-		if(1){
-		//0100
-			turnright();
-		}
-		if(1){
-		//0101
-			turnaround();
-		}
-		if(1){
-		//0110
-		
-		//add'l functionality
-		}
-	
-
-		
-	}*/
 	return 0;
 }
